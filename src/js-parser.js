@@ -7,12 +7,16 @@ const ASSET_EXTENSIONS = [
   '.mp3', '.wav', '.flac', '.aac', '.m4a',
   '.woff', '.woff2', '.ttf', '.otf', '.eot',
   '.pdf', '.json', '.xml', '.csv',
+  '.gltf', '.glb', '.obj', '.fbx', '.stl', '.dae', '.exr',
   '.css', // occasionally referenced in JS
 ];
 
 // Matches any quoted or template-literal string that ends in a known asset extension
 // Handles:  "/images/foo.jpg"  |  '/fonts/bar.woff2'  |  `/images/${x}.png`  (skips the dynamic ones)
-const ASSET_STRING_RE = /['"`]([^'"`\s\n\r]{2,300}\.(?:jpe?g|png|gif|webp|svg|ico|avif|bmp|tiff|mp4|webm|ogg|mov|mp3|wav|flac|aac|m4a|woff2?|ttf|otf|eot|pdf|json|xml|csv))['"`]/gi;
+const ASSET_STRING_RE = /['"`]([^'"`\s\n\r]{2,300}\.(?:jpe?g|png|gif|webp|svg|ico|avif|bmp|tiff|mp4|webm|ogg|mov|mp3|wav|flac|aac|m4a|woff2?|ttf|otf|eot|pdf|json|xml|csv|gltf|glb|obj|fbx|stl|dae|exr))['"`]/gi;
+
+// Catch common resource directories and short-hand texture patterns (like _c, _n, _m)
+const FOLDER_ASSET_RE = /['"`]((?:models|images|assets|k_txts|w_txts)\/[^'"`\s\n\r]{1,300}(?:\.[a-z0-9]+)?)/gi;
 
 // URL(...) inside JS strings
 const JS_URL_RE = /url\(['"`]?([^'"`)\s]+)['"`]?\)/gi;
@@ -39,6 +43,11 @@ export function extractJsAssets(jsText, baseUrl) {
 
   ASSET_STRING_RE.lastIndex = 0;
   while ((m = ASSET_STRING_RE.exec(jsText)) !== null) {
+    add(m[1]);
+  }
+
+  FOLDER_ASSET_RE.lastIndex = 0;
+  while ((m = FOLDER_ASSET_RE.exec(jsText)) !== null) {
     add(m[1]);
   }
 

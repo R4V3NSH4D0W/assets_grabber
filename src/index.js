@@ -59,7 +59,7 @@ async function promptOptions() {
   rl.close();
   console.log();
 
-  return { rawUrl, out, typesRaw: typesRaw || null, crawlPages, concurrency, sameDomain };
+  return { rawUrl, out, typesRaw: typesRaw || null, crawlPages, concurrency, sameDomain, interactiveFilter: !typesRaw };
 }
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -122,6 +122,8 @@ function parseTypes(typesStr) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
+  let interactiveFilter = false;
+
   // ── Interactive mode when no CLI URL given ────────────────────────────────
   if (isInteractive) {
     const answers = await promptOptions();
@@ -131,6 +133,7 @@ async function main() {
     opts.crawlPages = answers.crawlPages;
     opts.concurrency = String(answers.concurrency);
     opts.sameDomain  = answers.sameDomain;
+    interactiveFilter = answers.interactiveFilter;
   } else {
     logger.banner();
   }
@@ -193,6 +196,43 @@ async function main() {
   if (assets.size === 0) {
     logger.warn('No assets found. Try removing --types filter or --same-domain flag.');
     process.exit(0);
+  }
+
+  // ── Step 1.5: Interactive Asset Type Selection ──────────────────────────────
+  if (interactiveFilter) {
+    const byType = {};
+    for (const { type } of assets.values()) {
+      byType[type] = (byType[type] || 0) + 1;
+    }
+
+    const categories = Object.keys(byType).sort();
+    console.log(chalk.bold('📦 Found Assets:'));
+    categories.forEach((cat, i) => {
+      console.log(`  ${chalk.cyan(i + 1)}. ${chalk.white(cat.padEnd(10))} (${byType[cat]} files)`);
+    });
+    console.log(`  ${chalk.cyan('A')}. ${chalk.white('All of them')}`);
+    console.log();
+
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const choice = (await ask(rl, chalk.bold.yellow('  Which categories to download? (e.g. 1,2 or A) › '))).trim().toUpperCase();
+    rl.close();
+    console.log();
+
+    if (choice !== 'A' && choice !== '') {
+      const selectedIndices = choice.split(',').map(s => parseInt(s.trim(), 10) - 1);
+      const selectedTypes = selectedIndices.map(idx => categories[idx]).filter(Boolean);
+      
+      if (selectedTypes.length > 0) {
+        logger.info(`Filtering for: ${chalk.white(selectedTypes.join(', '))}`);
+        for (const [url, asset] of assets.entries()) {
+          if (!selectedTypes.includes(asset.type)) {
+            assets.delete(url);
+          }
+        }
+        logger.info(`Remaining assets: ${chalk.bold.green(assets.size)}`);
+        logger.blank();
+      }
+    }
   }
 
   // ── Step 2: Dry-run listing ────────────────────────────────────────────────

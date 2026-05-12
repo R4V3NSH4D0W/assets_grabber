@@ -60,8 +60,15 @@ async function downloadAsset(assetUrl, outDir, options = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      const urlObj = new URL(assetUrl);
+      const headers = {
+        ...DEFAULT_HEADERS,
+        'Referer': urlObj.origin + '/',
+        'Origin': urlObj.origin,
+      };
+
       const response = await axios.get(assetUrl, {
-        headers: DEFAULT_HEADERS,
+        headers,
         timeout,
         responseType: 'arraybuffer',
         maxRedirects: 10,

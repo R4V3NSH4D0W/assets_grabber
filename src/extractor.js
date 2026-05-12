@@ -28,6 +28,7 @@ const EXT_CATEGORIES = {
   audio:  ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a'],
   doc:    ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'],
   data:   ['.json', '.xml', '.csv'],
+  model:  ['.gltf', '.glb', '.obj', '.fbx', '.stl', '.dae', '.exr'],
 };
 
 function classify(url) {

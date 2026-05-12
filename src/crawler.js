@@ -118,7 +118,8 @@ export async function crawl(targetUrl, options = {}) {
                 ['jpg','jpeg','png','gif','webp','svg','ico','avif','bmp','tiff'].includes(ext) ? 'image' :
                 ['woff','woff2','ttf','otf','eot'].includes(ext) ? 'font' :
                 ['mp4','webm','ogg','mov'].includes(ext) ? 'video' :
-                ['mp3','wav','flac','aac','m4a'].includes(ext) ? 'audio' : 'js-asset';
+                ['mp3','wav','flac','aac','m4a'].includes(ext) ? 'audio' :
+                ['gltf','glb','obj','fbx','stl','dae','exr'].includes(ext) ? 'model' : 'js-asset';
               allAssets.set(nUrl, { url: nUrl, type });
             }
           }
