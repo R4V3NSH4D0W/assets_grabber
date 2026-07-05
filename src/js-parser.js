@@ -12,11 +12,11 @@ const ASSET_EXTENSIONS = [
 ];
 
 // Matches any quoted or template-literal string that ends in a known asset extension
-// Handles:  "/images/foo.jpg"  |  '/fonts/bar.woff2'  |  `/images/${x}.png`  (skips the dynamic ones)
-const ASSET_STRING_RE = /['"`]([^'"`\s\n\r]{2,300}\.(?:jpe?g|png|gif|webp|svg|ico|avif|bmp|tiff|mp4|webm|ogg|mov|mp3|wav|flac|aac|m4a|woff2?|ttf|otf|eot|pdf|json|xml|csv|gltf|glb|obj|fbx|stl|dae|exr))['"`]/gi;
+// Handles UDIM patterns like "texture.1001.jpg" and standard extensions
+const ASSET_STRING_RE = /['"`]([^'"`\s\n\r]{2,300}\.(?:jpe?g|png|gif|webp|svg|ico|avif|bmp|tiff|mp4|webm|ogg|mov|mp3|wav|flac|aac|m4a|woff2?|ttf|otf|eot|pdf|json|xml|csv|gltf|glb|obj|fbx|stl|dae|exr|(?:\d{4}\.jpe?g)))['"`]/gi;
 
-// Catch common resource directories and short-hand texture patterns (like _c, _n, _m)
-const FOLDER_ASSET_RE = /['"`]((?:models|images|assets|k_txts|w_txts)\/[^'"`\s\n\r]{1,300}(?:\.[a-z0-9]+)?)/gi;
+// Catch common resource directories and specific UDIM texture folders
+const FOLDER_ASSET_RE = /['"`]((?:models|images|assets|k_txts|w_txts)\/[^'"`\s\n\r]{1,300}(?:\.\d{4})?\.(?:jpe?g|png|webp))['"`]/gi;
 
 // URL(...) inside JS strings
 const JS_URL_RE = /url\(['"`]?([^'"`)\s]+)['"`]?\)/gi;

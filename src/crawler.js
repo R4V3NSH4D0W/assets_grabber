@@ -123,6 +123,27 @@ export async function crawl(targetUrl, options = {}) {
               allAssets.set(nUrl, { url: nUrl, type });
             }
           }
+
+          // --- Katana Texture Hunter ---
+          const origin = new URL(targetUrl).origin;
+          const prefixes = [
+            'Katana_and_sheath_M_Katana',
+            'Katana_and_sheath_M_Sheath',
+            'Katana_and_Sheath_M_Katana',
+            'Katana_and_Sheath_M_Sheath',
+            'M_Katana',
+            'M_Sheath'
+          ];
+          const types = ['BaseColor', 'Metallic', 'Normal', 'Roughness', 'Height'];
+          
+          for (const p of prefixes) {
+            for (const t of types) {
+              const texUrl = `${origin}/models/k_txts/${p}_${t}.1001.jpg`;
+              if (!allAssets.has(texUrl)) {
+                allAssets.set(texUrl, { url: texUrl, type: 'image' });
+              }
+            }
+          }
         } catch (_) {
           // Silently skip JS fetch failures
         }
