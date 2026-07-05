@@ -22,14 +22,6 @@ A powerful, fast, and configurable CLI tool to download **all assets** from any 
 
 ## Installation
 
-### Globally via npm
-
-```bash
-npm install -g asset-grabber
-```
-
-### Locally / For Development
-
 1. Clone the repository:
    ```bash
    git clone https://github.com/yourusername/asset-grabber.git
@@ -39,12 +31,13 @@ npm install -g asset-grabber
    ```bash
    npm install
    ```
-3. Link the package locally (optional):
+3. Link the package globally to use the `grab` command from anywhere:
    ```bash
    npm link
    ```
 
 ---
+
 
 ## Usage
 
