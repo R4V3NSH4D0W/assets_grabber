@@ -19,7 +19,6 @@ const DEFAULT_HEADERS = {
  */
 function urlToLocalPath(assetUrl, outDir) {
   const parsed = new URL(assetUrl);
-  // Strip query/hash for path construction, but keep them for disambiguation
   let pathname = parsed.pathname;
 
   // Decode percent-encoding
@@ -31,6 +30,25 @@ function urlToLocalPath(assetUrl, outDir) {
   // If pathname is empty or ends with /, use index.html
   if (!pathname || pathname.endsWith('/')) {
     pathname = pathname + 'index.html';
+  }
+
+  // If there are query parameters, append a short hash of them to prevent overwriting
+  if (parsed.search) {
+    let hash = 0;
+    const searchStr = parsed.search;
+    for (let i = 0; i < searchStr.length; i++) {
+      const char = searchStr.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash |= 0;
+    }
+    const hashStr = '_' + Math.abs(hash).toString(36);
+
+    const ext = path.extname(pathname);
+    if (ext) {
+      pathname = pathname.slice(0, -ext.length) + hashStr + ext;
+    } else {
+      pathname = pathname + hashStr;
+    }
   }
 
   // If no extension, guess from MIME or leave as-is
