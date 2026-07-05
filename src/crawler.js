@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { URL } from 'url';
+import puppeteer from 'puppeteer';
 import { extractAssets, extractCssAssets } from './extractor.js';
 import { extractJsAssets } from './js-parser.js';
 import { logger } from './logger.js';
@@ -53,123 +54,175 @@ export async function crawl(targetUrl, options = {}) {
 
   const baseOrigin = new URL(targetUrl).origin;
 
-  while (queue.length > 0 && pagesVisited < maxPages) {
-    const pageUrl = queue.shift();
-    if (visited.has(pageUrl)) continue;
-    visited.add(pageUrl);
-    pagesVisited++;
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+  } catch (err) {
+    logger.warn(`Could not launch headless browser: ${err.message}. Falling back to standard HTTP requests.`);
+  }
 
-    if (ora) {
-      ora.text = `Crawling page ${pagesVisited}: ${pageUrl}`;
-    } else {
-      logger.info(`Crawling: ${pageUrl}`);
-    }
+  try {
+    while (queue.length > 0 && pagesVisited < maxPages) {
+      const pageUrl = queue.shift();
+      if (visited.has(pageUrl)) continue;
+      visited.add(pageUrl);
+      pagesVisited++;
 
-    let html;
-    try {
-      const { data, contentType } = await fetchUrl(pageUrl, timeout);
-      if (!contentType.includes('text/html')) continue;
-      html = Buffer.from(data).toString('utf-8');
-    } catch (err) {
-      logger.warn(`Could not fetch page: ${pageUrl} — ${err.message}`);
-      continue;
-    }
+      if (ora) {
+        ora.text = `Crawling page ${pagesVisited}: ${pageUrl}`;
+      } else {
+        logger.info(`Crawling: ${pageUrl}`);
+      }
 
-    // Extract assets from this page
-    const pageAssets = extractAssets(html, pageUrl, { types, sameDomain });
-    for (const [url, asset] of pageAssets) {
-      if (!allAssets.has(url)) allAssets.set(url, asset);
-    }
+      let html;
+      let fetchedWithBrowser = false;
 
-    // Deep CSS parsing: fetch each .css file and extract url() from it
-    if (deepCss) {
-      const cssAssets = [...pageAssets.values()].filter(a => a.type === 'style');
-      for (const cssAsset of cssAssets) {
+      if (browser) {
         try {
-          const { data, contentType } = await fetchUrl(cssAsset.url, timeout);
-          if (!contentType.includes('css') && !contentType.includes('text')) continue;
-          const cssText = Buffer.from(data).toString('utf-8');
-          const nested = extractCssAssets(cssText, cssAsset.url);
-          for (const nUrl of nested) {
-            if (!allAssets.has(nUrl)) {
-              allAssets.set(nUrl, { url: nUrl, type: 'css-asset' });
-            }
+          const page = await browser.newPage();
+          await page.setUserAgent(DEFAULT_HEADERS['User-Agent']);
+          await page.setDefaultNavigationTimeout(timeout);
+
+          const response = await page.goto(pageUrl, {
+            waitUntil: 'networkidle2',
+            timeout,
+          });
+
+          const status = response ? response.status() : 200;
+          const headers = response ? response.headers() : {};
+          const contentType = headers['content-type'] || '';
+
+          if (status >= 400) {
+            throw new Error(`Status code ${status}`);
           }
-        } catch (_) {
-          // Silently skip CSS fetch failures
+
+          if (contentType && !contentType.includes('text/html')) {
+            await page.close();
+            continue;
+          }
+
+          html = await page.content();
+          fetchedWithBrowser = true;
+          await page.close();
+        } catch (err) {
+          logger.warn(`Browser fetch failed for ${pageUrl}: ${err.message}. Falling back to standard HTTP request.`);
         }
       }
-    }
 
-    // Deep JS parsing: fetch every script bundle and scan for asset string literals
-    // This catches images/fonts used in scroll animations, canvas scenes, lazy loaders, etc.
-    if (deepJs) {
-      const scriptAssets = [...pageAssets.values()].filter(a => a.type === 'script');
-      for (const scriptAsset of scriptAssets) {
+      if (!fetchedWithBrowser) {
         try {
-          const { data, contentType } = await fetchUrl(scriptAsset.url, timeout);
-          if (!contentType.includes('javascript') && !contentType.includes('text')) continue;
-          const jsText = Buffer.from(data).toString('utf-8');
-          const nested = extractJsAssets(jsText, new URL(targetUrl).origin);
-          for (const nUrl of nested) {
-            if (!allAssets.has(nUrl)) {
-              const ext = nUrl.split('.').pop().toLowerCase().split('?')[0];
-              const type =
-                ['jpg','jpeg','png','gif','webp','svg','ico','avif','bmp','tiff'].includes(ext) ? 'image' :
-                ['woff','woff2','ttf','otf','eot'].includes(ext) ? 'font' :
-                ['mp4','webm','ogg','mov'].includes(ext) ? 'video' :
-                ['mp3','wav','flac','aac','m4a'].includes(ext) ? 'audio' :
-                ['gltf','glb','obj','fbx','stl','dae','exr'].includes(ext) ? 'model' : 'js-asset';
-              allAssets.set(nUrl, { url: nUrl, type });
-            }
-          }
+          const { data, contentType } = await fetchUrl(pageUrl, timeout);
+          if (!contentType.includes('text/html')) continue;
+          html = Buffer.from(data).toString('utf-8');
+        } catch (err) {
+          logger.warn(`Could not fetch page: ${pageUrl} — ${err.message}`);
+          continue;
+        }
+      }
 
-          // --- Katana Texture Hunter ---
-          const origin = new URL(targetUrl).origin;
-          const prefixes = [
-            'Katana_and_sheath_M_Katana',
-            'Katana_and_sheath_M_Sheath',
-            'Katana_and_Sheath_M_Katana',
-            'Katana_and_Sheath_M_Sheath',
-            'M_Katana',
-            'M_Sheath'
-          ];
-          const types = ['BaseColor', 'Metallic', 'Normal', 'Roughness', 'Height'];
-          
-          for (const p of prefixes) {
-            for (const t of types) {
-              const texUrl = `${origin}/models/k_txts/${p}_${t}.1001.jpg`;
-              if (!allAssets.has(texUrl)) {
-                allAssets.set(texUrl, { url: texUrl, type: 'image' });
+      // Extract assets from this page
+      const pageAssets = extractAssets(html, pageUrl, { types, sameDomain });
+      for (const [url, asset] of pageAssets) {
+        if (!allAssets.has(url)) allAssets.set(url, asset);
+      }
+
+      // Deep CSS parsing: fetch each .css file and extract url() from it
+      if (deepCss) {
+        const cssAssets = [...pageAssets.values()].filter(a => a.type === 'style');
+        for (const cssAsset of cssAssets) {
+          try {
+            const { data, contentType } = await fetchUrl(cssAsset.url, timeout);
+            if (!contentType.includes('css') && !contentType.includes('text')) continue;
+            const cssText = Buffer.from(data).toString('utf-8');
+            const nested = extractCssAssets(cssText, cssAsset.url);
+            for (const nUrl of nested) {
+              if (!allAssets.has(nUrl)) {
+                allAssets.set(nUrl, { url: nUrl, type: 'css-asset' });
               }
             }
+          } catch (_) {
+            // Silently skip CSS fetch failures
           }
-        } catch (_) {
-          // Silently skip JS fetch failures
         }
       }
-    }
 
-    // If crawling multiple pages, queue same-domain HTML links
-    if (crawlPages) {
-      const $ = cheerio.load(html);
-      $('a[href]').each((_, el) => {
-        const href = $(el).attr('href');
-        if (!href) return;
-        try {
-          const resolved = new URL(href, pageUrl).href;
-          if (
-            resolved.startsWith(baseOrigin) &&
-            !visited.has(resolved) &&
-            !resolved.includes('#') &&
-            !resolved.match(/\.(jpg|jpeg|png|gif|webp|svg|ico|pdf|zip|tar|gz|css|js|woff|ttf)(\?|$)/i)
-          ) {
-            queue.push(resolved);
+      // Deep JS parsing: fetch every script bundle and scan for asset string literals
+      if (deepJs) {
+        const scriptAssets = [...pageAssets.values()].filter(a => a.type === 'script');
+        for (const scriptAsset of scriptAssets) {
+          try {
+            const { data, contentType } = await fetchUrl(scriptAsset.url, timeout);
+            if (!contentType.includes('javascript') && !contentType.includes('text')) continue;
+            const jsText = Buffer.from(data).toString('utf-8');
+            const nested = extractJsAssets(jsText, new URL(targetUrl).origin);
+            for (const nUrl of nested) {
+              if (!allAssets.has(nUrl)) {
+                const ext = nUrl.split('.').pop().toLowerCase().split('?')[0];
+                const type =
+                  ['jpg','jpeg','png','gif','webp','svg','ico','avif','bmp','tiff'].includes(ext) ? 'image' :
+                  ['woff','woff2','ttf','otf','eot'].includes(ext) ? 'font' :
+                  ['mp4','webm','ogg','mov'].includes(ext) ? 'video' :
+                  ['mp3','wav','flac','aac','m4a'].includes(ext) ? 'audio' :
+                  ['gltf','glb','obj','fbx','stl','dae','exr'].includes(ext) ? 'model' : 'js-asset';
+                allAssets.set(nUrl, { url: nUrl, type });
+              }
+            }
+
+            // --- Katana Texture Hunter ---
+            const origin = new URL(targetUrl).origin;
+            const prefixes = [
+              'Katana_and_sheath_M_Katana',
+              'Katana_and_sheath_M_Sheath',
+              'Katana_and_Sheath_M_Katana',
+              'Katana_and_Sheath_M_Sheath',
+              'M_Katana',
+              'M_Sheath'
+            ];
+            const types = ['BaseColor', 'Metallic', 'Normal', 'Roughness', 'Height'];
+            
+            for (const p of prefixes) {
+              for (const t of types) {
+                const texUrl = `${origin}/models/k_txts/${p}_${t}.1001.jpg`;
+                if (!allAssets.has(texUrl)) {
+                  allAssets.set(texUrl, { url: texUrl, type: 'image' });
+                }
+              }
+            }
+          } catch (_) {
+            // Silently skip JS fetch failures
           }
-        } catch (_) {}
-      });
+        }
+      }
+
+      // If crawling multiple pages, queue same-domain HTML links
+      if (crawlPages) {
+        const $ = cheerio.load(html);
+        $('a[href]').each((_, el) => {
+          const href = $(el).attr('href');
+          if (!href) return;
+          try {
+            const resolved = new URL(href, pageUrl).href;
+            if (
+              resolved.startsWith(baseOrigin) &&
+              !visited.has(resolved) &&
+              !resolved.includes('#') &&
+              !resolved.match(/\.(jpg|jpeg|png|gif|webp|svg|ico|pdf|zip|tar|gz|css|js|woff|ttf)(\?|$)/i)
+            ) {
+              queue.push(resolved);
+            }
+          } catch (_) {}
+        });
+      }
+    }
+  } finally {
+    if (browser) {
+      await browser.close();
     }
   }
 
   return allAssets;
 }
+
